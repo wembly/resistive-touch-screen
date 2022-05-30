@@ -29,7 +29,7 @@ fn map_range(x: u16, in_min: u16, in_max: u16, out_min: u16, out_max: u16) -> u1
     }
 }
 
-pub struct ResistiveTouchPanel {
+pub struct ResistiveTouchScreen {
     x_m: Pin<TouchXlId, FloatingDisabled>,
     x_p: Pin<TouchXrId, FloatingDisabled>,
     y_m: Pin<TouchYuId, FloatingDisabled>,
@@ -40,14 +40,14 @@ pub struct ResistiveTouchPanel {
     size: (u16, u16),
 }
 
-impl ResistiveTouchPanel {
+impl ResistiveTouchScreen {
     pub fn new(
         x_m: impl Into<Pin<TouchXlId, FloatingDisabled>>,
         x_p: impl Into<Pin<TouchXrId, FloatingDisabled>>,
         y_m: impl Into<Pin<TouchYuId, FloatingDisabled>>,
         y_p: impl Into<Pin<TouchYdId, FloatingDisabled>>,
     ) -> Self {
-        ResistiveTouchPanel {
+        ResistiveTouchScreen {
             x_m: x_m.into(),
             x_p: x_p.into(),
             y_m: y_m.into(),
