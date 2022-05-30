@@ -1,15 +1,20 @@
 #![no_std]
 
 use bsp::hal::adc::Adc;
-use bsp::hal::ehal::adc::Channel;
 use bsp::hal::ehal::digital::v2::OutputPin;
-use bsp::hal::gpio::Alternate;
-use bsp::hal::gpio::AnyPin;
+use bsp::hal::gpio::FloatingDisabled;
 use bsp::hal::gpio::Pin;
-use bsp::hal::gpio::PushPullOutput;
 use bsp::hal::gpio::B;
 use bsp::hal::prelude::*;
 use bsp::pac::ADC0;
+use bsp::TouchXlId;
+use bsp::TouchXlReset;
+use bsp::TouchXrId;
+use bsp::TouchXrReset;
+use bsp::TouchYdId;
+use bsp::TouchYdReset;
+use bsp::TouchYuId;
+use bsp::TouchYuReset;
 use core::cmp::max;
 use core::cmp::min;
 use pyportal as bsp;
@@ -24,37 +29,29 @@ fn map_range(x: u16, in_min: u16, in_max: u16, out_min: u16, out_max: u16) -> u1
     }
 }
 
-pub struct ResistiveTouchPanel<PinXM, PinXP, PinYM, PinYP> {
-    x_m: PinXM,
-    x_p: PinXP,
-    y_m: PinYM,
-    y_p: PinYP,
+pub struct ResistiveTouchPanel {
+    x_m: Pin<TouchXlId, FloatingDisabled>,
+    x_p: Pin<TouchXrId, FloatingDisabled>,
+    y_m: Pin<TouchYuId, FloatingDisabled>,
+    y_p: Pin<TouchYdId, FloatingDisabled>,
     samples: u8,
     z_threshold: u16,
     calibration: ((u16, u16), (u16, u16)),
     size: (u16, u16),
 }
 
-impl<PinXM, PinXP, PinYM, PinYP> ResistiveTouchPanel<PinXM, PinXP, PinYM, PinYP>
-where
-    PinXM: AnyPin + From<Pin<<PinXM as AnyPin>::Id, Alternate<B>>>,
-    PinXP: AnyPin
-        + From<Pin<<PinXP as AnyPin>::Id, PushPullOutput>>
-        + From<Pin<<PinXP as AnyPin>::Id, Alternate<B>>>,
-    PinYM: AnyPin + From<Pin<<PinYM as AnyPin>::Id, PushPullOutput>>,
-    PinYP: AnyPin
-        + From<Pin<<PinYP as AnyPin>::Id, PushPullOutput>>
-        + From<Pin<<PinYP as AnyPin>::Id, Alternate<B>>>,
-    Pin<<PinXM as AnyPin>::Id, Alternate<B>>: Channel<ADC0>,
-    Pin<<PinYP as AnyPin>::Id, Alternate<B>>: Channel<ADC0>,
-    Pin<<PinXP as AnyPin>::Id, Alternate<B>>: Channel<ADC0>,
-{
-    pub fn new(x_m: PinXM, x_p: PinXP, y_m: PinYM, y_p: PinYP) -> Self {
+impl ResistiveTouchPanel {
+    pub fn new(
+        x_m: impl Into<Pin<TouchXlId, FloatingDisabled>>,
+        x_p: impl Into<Pin<TouchXrId, FloatingDisabled>>,
+        y_m: impl Into<Pin<TouchYuId, FloatingDisabled>>,
+        y_p: impl Into<Pin<TouchYdId, FloatingDisabled>>,
+    ) -> Self {
         ResistiveTouchPanel {
-            x_m: x_m,
-            x_p: x_p,
-            y_m: y_m,
-            y_p: y_p,
+            x_m: x_m.into(),
+            x_p: x_p.into(),
+            y_m: y_m.into(),
+            y_p: y_p.into(),
             samples: 4,
             z_threshold: 10000,
             calibration: ((u16::MIN, u16::MAX), (u16::MIN, u16::MAX)),
@@ -62,16 +59,16 @@ where
         }
     }
 
-    pub fn release(self) -> (PinXM, PinXP, PinYM, PinYP) {
+    pub fn release(self) -> (TouchXlReset, TouchXrReset, TouchYuReset, TouchYdReset) {
         (self.x_m, self.x_p, self.y_m, self.y_p)
     }
 
     pub fn read_touch(mut self, adc: &mut Adc<ADC0>) -> Result<Option<(u16, u16)>, ()> {
         let z = {
-            let mut x_p = self.x_p.into().into_push_pull_output();
-            let mut y_m = self.y_m.into().into_push_pull_output();
-            let mut x_m = self.x_m.into().into_alternate::<B>();
-            let mut y_p = self.y_p.into().into_alternate::<B>();
+            let mut x_p = self.x_p.into_push_pull_output();
+            let mut y_m = self.y_m.into_push_pull_output();
+            let mut x_m = self.x_m.into_alternate::<B>();
+            let mut y_p = self.y_p.into_alternate::<B>();
 
             x_p.set_low().map_err(|_| ())?;
             y_m.set_high().map_err(|_| ())?;
@@ -89,9 +86,9 @@ where
         };
         if z > self.z_threshold {
             let x = {
-                let mut x_p = self.y_p.into().into_push_pull_output();
-                let mut x_m = self.y_m.into().into_push_pull_output();
-                let mut y_p = self.x_p.into().into_alternate::<B>();
+                let mut x_p = self.x_p.into_push_pull_output();
+                let mut x_m = self.x_m.into_push_pull_output();
+                let mut y_p = self.y_p.into_alternate::<B>();
                 x_p.set_high().map_err(|_| ())?;
                 x_m.set_low().map_err(|_| ())?;
 
@@ -103,9 +100,9 @@ where
                 .sum::<u16>()
                     / (self.samples as u16);
 
-                self.y_p = x_p.into();
-                self.y_m = x_m.into();
-                self.x_p = y_p.into();
+                self.y_p = y_p.into();
+                self.x_m = x_m.into();
+                self.x_p = x_p.into();
 
                 map_range(
                     value,
@@ -117,9 +114,9 @@ where
             };
 
             let y = {
-                let mut y_p = self.y_p.into().into_push_pull_output();
-                let mut y_m = self.y_m.into().into_push_pull_output();
-                let mut x_p = self.x_p.into().into_alternate::<B>();
+                let mut y_p = self.y_p.into_push_pull_output();
+                let mut y_m = self.y_m.into_push_pull_output();
+                let mut x_p = self.x_p.into_alternate::<B>();
                 y_p.set_high().map_err(|_| ())?;
                 y_m.set_low().map_err(|_| ())?;
 
