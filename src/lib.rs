@@ -137,7 +137,7 @@ impl ResistiveTouchScreen {
                     self.calibration.1 .0,
                     self.calibration.1 .1,
                     0,
-                    self.size.0,
+                    self.size.1,
                 )
             };
 
