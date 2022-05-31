@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# embedded-hal = { version = "0.2.7", features = ["unproven"] }
+# embedded-hal = "0.2.7"
+embedded-hal = { version = "0.2.7", features = ["unproven"] }
 # atsamd-hal = { version = "0.15.1", features = ["library"] }
-pyportal = "0.10.0"
-
-[patch.crates-io]
-pyportal = { path = "../3rdParty/atsamd/boards/pyportal" }
+atsamd-hal = { path = "/Users/wembly/Projects/3rdParty/atsamd/hal", features = [
+    "samd51j",
+] }
+# pyportal = { path = "/Users/wembly/Projects/3rdParty/pyportal/boards/pyportal" }

@@ -1,23 +1,20 @@
 #![no_std]
 
-use bsp::hal::adc::Adc;
-use bsp::hal::ehal::digital::v2::OutputPin;
-use bsp::hal::gpio::FloatingDisabled;
-use bsp::hal::gpio::Pin;
-use bsp::hal::gpio::B;
-use bsp::hal::prelude::*;
-use bsp::pac::ADC0;
-use bsp::TouchXlId;
-use bsp::TouchXlReset;
-use bsp::TouchXrId;
-use bsp::TouchXrReset;
-use bsp::TouchYdId;
-use bsp::TouchYdReset;
-use bsp::TouchYuId;
-use bsp::TouchYuReset;
+use atsamd_hal as hal;
+
+use hal::adc::Adc;
+use hal::adc::AdcChannel;
+use hal::adc::AdcPeripheral;
+use hal::ehal::digital::v2::OutputPin;
+use hal::gpio::FloatingDisabled;
+use hal::gpio::Pin;
+use hal::gpio::PinId;
+use hal::gpio::B;
+use hal::prelude::*;
 use core::cmp::max;
 use core::cmp::min;
-use pyportal as bsp;
+
+mod touchio;
 
 fn map_range(x: u16, in_min: u16, in_max: u16, out_min: u16, out_max: u16) -> u16 {
     let mapped = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
@@ -29,23 +26,25 @@ fn map_range(x: u16, in_min: u16, in_max: u16, out_min: u16, out_max: u16) -> u1
     }
 }
 
-pub struct ResistiveTouchScreen {
-    x_m: Pin<TouchXlId, FloatingDisabled>,
-    x_p: Pin<TouchXrId, FloatingDisabled>,
-    y_m: Pin<TouchYuId, FloatingDisabled>,
-    y_p: Pin<TouchYdId, FloatingDisabled>,
+pub struct ResistiveTouchScreen<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId> {
+    x_m: Pin<PinXM, FloatingDisabled>,
+    x_p: Pin<PinXP, FloatingDisabled>,
+    y_m: Pin<PinYM, FloatingDisabled>,
+    y_p: Pin<PinYP, FloatingDisabled>,
     samples: u8,
     z_threshold: u16,
     calibration: ((u16, u16), (u16, u16)),
     size: (u16, u16),
 }
 
-impl ResistiveTouchScreen {
+impl<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId>
+    ResistiveTouchScreen<PinXM, PinXP, PinYM, PinYP>
+{
     pub fn new(
-        x_m: impl Into<Pin<TouchXlId, FloatingDisabled>>,
-        x_p: impl Into<Pin<TouchXrId, FloatingDisabled>>,
-        y_m: impl Into<Pin<TouchYuId, FloatingDisabled>>,
-        y_p: impl Into<Pin<TouchYdId, FloatingDisabled>>,
+        x_m: impl Into<Pin<PinXM, FloatingDisabled>>,
+        x_p: impl Into<Pin<PinXP, FloatingDisabled>>,
+        y_m: impl Into<Pin<PinYM, FloatingDisabled>>,
+        y_p: impl Into<Pin<PinYP, FloatingDisabled>>,
     ) -> Self {
         ResistiveTouchScreen {
             x_m: x_m.into(),
@@ -59,11 +58,27 @@ impl ResistiveTouchScreen {
         }
     }
 
-    pub fn release(self) -> (TouchXlReset, TouchXrReset, TouchYuReset, TouchYdReset) {
+    pub fn release(
+        self,
+    ) -> (
+        Pin<PinXM, FloatingDisabled>,
+        Pin<PinXP, FloatingDisabled>,
+        Pin<PinYM, FloatingDisabled>,
+        Pin<PinYP, FloatingDisabled>,
+    ) {
         (self.x_m, self.x_p, self.y_m, self.y_p)
     }
 
-    pub fn read_touch(mut self, adc: &mut Adc<ADC0>) -> Result<Option<(u16, u16)>, ()> {
+    pub fn touch_point<A: AdcPeripheral>(
+        mut self,
+        adc: &mut Adc<A>,
+    ) -> Result<Option<(u16, u16, u16)>, ()>
+    where
+        PinXM: AdcChannel<A>,
+        PinXP: AdcChannel<A>,
+        PinYM: AdcChannel<A>,
+        PinYP: AdcChannel<A>,
+    {
         let z = {
             let mut x_p = self.x_p.into_push_pull_output();
             let mut y_m = self.y_m.into_push_pull_output();
@@ -141,7 +156,7 @@ impl ResistiveTouchScreen {
                 )
             };
 
-            Ok(Some((x, y)))
+            Ok(Some((x, y, z)))
         } else {
             Ok(None)
         }
