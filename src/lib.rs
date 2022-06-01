@@ -1,40 +1,44 @@
 #![no_std]
 
+mod touchio;
+
+use core::cmp::max;
+use core::cmp::min;
+
 use atsamd_hal as hal;
 
 use hal::adc::Adc;
 use hal::adc::AdcChannel;
 use hal::adc::AdcPeripheral;
-use hal::ehal::digital::v2::OutputPin;
 use hal::gpio::FloatingDisabled;
 use hal::gpio::Pin;
 use hal::gpio::PinId;
-use hal::gpio::B;
-use hal::prelude::*;
-use core::cmp::max;
-use core::cmp::min;
+use touchio::TouchIO;
 
-mod touchio;
-
-fn map_range(x: u16, in_min: u16, in_max: u16, out_min: u16, out_max: u16) -> u16 {
-    let mapped = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+fn map_range(x: u32, in_min: u32, in_max: u32, out_min: u32, out_max: u32) -> u32 {
+    let mapped: f32 = (x as f32 - in_min as f32) * (out_max as f32 - out_min as f32)
+        / (in_max as f32 - in_min as f32)
+        + out_min as f32;
+    // let mapped = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 
     if out_min <= out_max {
-        max(min(mapped, out_max), out_min)
+        mapped.min(out_max as f32).max(out_min as f32) as u32
+        // max(min(mapped, out_max), out_min) as u16
     } else {
-        min(max(mapped, out_max), out_min)
+        mapped.max(out_max as f32).min(out_min as f32) as u32
+        // min(max(mapped, out_max), out_min) as u16
     }
 }
 
 pub struct ResistiveTouchScreen<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId> {
-    x_m: Pin<PinXM, FloatingDisabled>,
-    x_p: Pin<PinXP, FloatingDisabled>,
-    y_m: Pin<PinYM, FloatingDisabled>,
-    y_p: Pin<PinYP, FloatingDisabled>,
+    x_m: TouchIO<PinXM>,
+    x_p: TouchIO<PinXP>,
+    y_m: TouchIO<PinYM>,
+    y_p: TouchIO<PinYP>,
     samples: u8,
-    z_threshold: u16,
-    calibration: ((u16, u16), (u16, u16)),
-    size: (u16, u16),
+    z_threshold: u32,
+    calibration: ((u32, u32), (u32, u32)),
+    size: (u32, u32),
 }
 
 impl<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId>
@@ -47,32 +51,35 @@ impl<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId>
         y_p: impl Into<Pin<PinYP, FloatingDisabled>>,
     ) -> Self {
         ResistiveTouchScreen {
-            x_m: x_m.into(),
-            x_p: x_p.into(),
-            y_m: y_m.into(),
-            y_p: y_p.into(),
+            x_m: TouchIO::Disabled(x_m.into()),
+            x_p: TouchIO::Disabled(x_p.into()),
+            y_m: TouchIO::Disabled(y_m.into()),
+            y_p: TouchIO::Disabled(y_p.into()),
             samples: 4,
             z_threshold: 10000,
-            calibration: ((u16::MIN, u16::MAX), (u16::MIN, u16::MAX)),
-            size: (u16::MAX, u16::MAX),
+            // calibration: ((0, 65535), (0, 65535)),
+            calibration: ((13800, 52000), (16000, 44000)),
+            // calibration: ((5200, 59000), (5800, 57000)),
+            // size: (65535, 65535),
+            size: (320, 240),
         }
     }
 
-    pub fn release(
-        self,
-    ) -> (
-        Pin<PinXM, FloatingDisabled>,
-        Pin<PinXP, FloatingDisabled>,
-        Pin<PinYM, FloatingDisabled>,
-        Pin<PinYP, FloatingDisabled>,
-    ) {
-        (self.x_m, self.x_p, self.y_m, self.y_p)
-    }
+    // pub fn release(
+    //     self,
+    // ) -> (
+    //     Pin<PinXM, FloatingDisabled>,
+    //     Pin<PinXP, FloatingDisabled>,
+    //     Pin<PinYM, FloatingDisabled>,
+    //     Pin<PinYP, FloatingDisabled>,
+    // ) {
+    //     (self.x_m, self.x_p, self.y_m, self.y_p)
+    // }
 
     pub fn touch_point<A: AdcPeripheral>(
-        mut self,
+        &mut self,
         adc: &mut Adc<A>,
-    ) -> Result<Option<(u16, u16, u16)>, ()>
+    ) -> Option<(u32, u32, u32)>
     where
         PinXM: AdcChannel<A>,
         PinXP: AdcChannel<A>,
@@ -80,72 +87,35 @@ impl<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId>
         PinYP: AdcChannel<A>,
     {
         let z = {
-            let mut x_p = self.x_p.into_push_pull_output();
-            let mut y_m = self.y_m.into_push_pull_output();
-            let mut x_m = self.x_m.into_alternate::<B>();
-            let mut y_p = self.y_p.into_alternate::<B>();
+            self.x_p.set_low();
+            self.y_m.set_high();
+            let z1 = self.x_m.read(adc);
+            self.x_m.make_disabled();
 
-            x_p.set_low().map_err(|_| ())?;
-            y_m.set_high().map_err(|_| ())?;
-            let z1: u16 = adc.read(&mut x_m).map_err(|_| ())?;
-            let z2: u16 = adc.read(&mut y_p).map_err(|_| ())?;
+            let z2 = self.y_p.read(adc);
+            self.y_p.make_disabled();
 
-            let z = u16::MAX - (z2 - z1);
+            let z = 65535 - (z2 - z1);
 
-            self.x_p = x_p.into();
-            self.y_m = y_m.into();
-            self.x_m = x_m.into();
-            self.y_p = y_p.into();
+            self.x_p.make_disabled();
+            self.y_m.make_disabled();
 
             z
         };
-        if z > self.z_threshold {
-            let x = {
-                let mut x_p = self.x_p.into_push_pull_output();
-                let mut x_m = self.x_m.into_push_pull_output();
-                let mut y_p = self.y_p.into_alternate::<B>();
-                x_p.set_high().map_err(|_| ())?;
-                x_m.set_low().map_err(|_| ())?;
-
-                let value: u16 = core::iter::from_fn(|| {
-                    let sample: u16 = adc.read(&mut y_p).unwrap();
-                    Some(sample)
-                })
-                .take(self.samples as usize)
-                .sum::<u16>()
-                    / (self.samples as u16);
-
-                self.y_p = y_p.into();
-                self.x_m = x_m.into();
-                self.x_p = x_p.into();
-
-                map_range(
-                    value,
-                    self.calibration.0 .0,
-                    self.calibration.0 .1,
-                    0,
-                    self.size.0,
-                )
-            };
-
+        if z > self.z_threshold as u32 {
             let y = {
-                let mut y_p = self.y_p.into_push_pull_output();
-                let mut y_m = self.y_m.into_push_pull_output();
-                let mut x_p = self.x_p.into_alternate::<B>();
-                y_p.set_high().map_err(|_| ())?;
-                y_m.set_low().map_err(|_| ())?;
+                self.x_p.set_high();
+                self.x_m.set_low();
 
-                let value: u16 = core::iter::from_fn(|| {
-                    let sample: u16 = adc.read(&mut x_p).unwrap();
-                    Some(sample)
-                })
-                .take(self.samples as usize)
-                .sum::<u16>()
-                    / (self.samples as u16);
+                let value = (0..self.samples)
+                    .into_iter()
+                    .map(|_| self.y_p.read(adc))
+                    .sum::<u32>()
+                    / (self.samples as u32);
 
-                self.y_p = y_p.into();
-                self.y_m = y_m.into();
-                self.x_p = x_p.into();
+                self.y_p.make_disabled();
+                self.x_m.make_disabled();
+                self.x_p.make_disabled();
 
                 map_range(
                     value,
@@ -156,9 +126,32 @@ impl<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId>
                 )
             };
 
-            Ok(Some((x, y, z)))
+            let x = {
+                self.y_p.set_high();
+                self.y_m.set_low();
+
+                let value = (0..self.samples)
+                    .into_iter()
+                    .map(|_| self.x_p.read(adc))
+                    .sum::<u32>()
+                    / (self.samples as u32);
+
+                self.x_p.make_disabled();
+                self.y_p.make_disabled();
+                self.y_m.make_disabled();
+
+                map_range(
+                    value,
+                    self.calibration.0 .0,
+                    self.calibration.0 .1,
+                    0,
+                    self.size.0,
+                )
+            };
+
+            Some((x, y, z))
         } else {
-            Ok(None)
+            None
         }
     }
 }

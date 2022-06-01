@@ -3,6 +3,8 @@ use atsamd_hal as hal;
 use hal::adc::Adc;
 use hal::adc::AdcChannel;
 use hal::adc::AdcPeripheral;
+use hal::adc::Reference;
+use hal::adc::Resolution;
 use hal::gpio::Pin;
 use hal::gpio::AlternateB;
 use hal::gpio::PushPullOutput;
@@ -141,12 +143,24 @@ impl<I: PinId> TouchIO<I> {
     }
 
     #[inline]
-    pub fn read<A>(&mut self, adc: &mut Adc<A>) -> u16
+    pub fn read<A>(&mut self, adc: &mut Adc<A>) -> u32
     where
         A: AdcPeripheral,
         I: AdcChannel<A>,
     {
         let pin = self.make_adc();
-        adc.read(pin).unwrap()
+
+        adc.reference(Reference::INTVCC1);
+
+        // SAMD21 only
+        // adc.gain(Gain::DIV2);
+
+        adc.resolution(Resolution::_12BIT);
+
+        let _: u32 = adc.read(pin).unwrap(); // read twice, discard first result as recommended by data sheet
+        let value: u32 = adc.read(pin).unwrap();
+
+        (value << 4) | (value >> 8)
+        // value
     }
 }
