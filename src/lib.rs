@@ -95,7 +95,7 @@ impl<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId>
             let z2 = self.y_p.read(adc);
             self.y_p.make_disabled();
 
-            let z = 65535 - (z2 - z1);
+            let z = 65535 - (z2 as u32 - z1 as u32);
 
             self.x_p.make_disabled();
             self.y_m.make_disabled();
@@ -109,7 +109,7 @@ impl<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId>
 
                 let value = (0..self.samples)
                     .into_iter()
-                    .map(|_| self.y_p.read(adc))
+                    .map(|_| self.y_p.read(adc) as u32)
                     .sum::<u32>()
                     / (self.samples as u32);
 
@@ -132,7 +132,7 @@ impl<PinXM: PinId, PinXP: PinId, PinYM: PinId, PinYP: PinId>
 
                 let value = (0..self.samples)
                     .into_iter()
-                    .map(|_| self.x_p.read(adc))
+                    .map(|_| self.x_p.read(adc) as u32)
                     .sum::<u32>()
                     / (self.samples as u32);
 

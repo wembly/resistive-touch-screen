@@ -143,7 +143,7 @@ impl<I: PinId> TouchIO<I> {
     }
 
     #[inline]
-    pub fn read<A>(&mut self, adc: &mut Adc<A>) -> u32
+    pub fn read<A>(&mut self, adc: &mut Adc<A>) -> u16
     where
         A: AdcPeripheral,
         I: AdcChannel<A>,
@@ -157,8 +157,8 @@ impl<I: PinId> TouchIO<I> {
 
         adc.resolution(Resolution::_12BIT);
 
-        let _: u32 = adc.read(pin).unwrap(); // read twice, discard first result as recommended by data sheet
-        let value: u32 = adc.read(pin).unwrap();
+        let _: u16 = adc.read(pin).unwrap(); // read twice, discard first result as recommended by data sheet
+        let value: u16 = adc.read(pin).unwrap();
 
         (value << 4) | (value >> 8)
         // value
